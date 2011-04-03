@@ -1,0 +1,57 @@
+= CreateOrUpdate
+
+CreateOrUpdate adds a +create_or_update+ method to ActiveRecord::Base
+which efficiently writes an array of ActiveRecords to the underlying
+database table.
+
+== Features
+* Roughly 10x faster than using equivalent ActiveRecord methods (of course timing depends on many factors; your results will differ)
+* Vendor-specific implementations for MySQL, PostgreSQL, SQLite with graceful fallback to generic ActiveRecord methods.
+* Upon attempting to save a duplicate record, options control whether to ignore the new record, update the existing record, or signal an error.
+* User-supplied keyset argument specifies which fields define uniqueness.
+
+== Example 1: single key with :update
+  # file: db/schema.rb
+  ...
+  create_table :employees, :force => true do |t|
+    t.string :name
+    t.decimal :salary, :precision => 7, :scale => 2
+  end
+  ...
+
+  # file: app/models/employee.rb
+  require 'create_or_update'
+  class Employee < ActiveRecord::Base
+    include CreateOrUpdate
+
+    def self.import(updated_roster)
+      candidates = YAML::load_file(update_roster)
+      create_or_update(candidates, :name, :if_exists => :update)
+    end
+  end
+
+== Example 2: joint key with :ignore
+  #file: db/schema.rb
+  ...
+  create_table :news_items, :force => true do |t|
+    t.int      :newsfeed_id
+    t.datetime :post_date
+    t.string   :keywords
+    t.string   :news_item
+  end
+  ...
+
+  # file: app/models/news_item.rb
+  require 'create_or_update'
+  class NewsItem < ActiveRecord::Base
+    include CreateOrUpdate
+
+    def self.import(latest_news)
+      items = YAML::load_file(update_roster)
+      create_or_update(items, [:newsfeed_id, :post_date], :if_exists => :ignore)
+    end
+  end
+
+== Notes
+* New records are saved without calling validations, before or after hooks.
+* The SQLite code for :if_exists => :update calls vanilla ActiveRecord methods, and may be slower than expected.
