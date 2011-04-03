@@ -1,7 +1,8 @@
 # == SYNOPSIS:
 #   % rails console
 #   >> load 'extras/benchmark_create_or_update.rb'
-#   >> BenchmarkCreateOrUpdate.benchmark(:key1, 2000, 2000, 2000)
+#   >> BenchmarkCreateOrUpdate.benchmark(:key1, 2000, 2000, 2000, :ignore)
+#   >> BenchmarkCreateOrUpdate.benchmark(:key1, 2000, 2000, 2000, :update)
 #
 module BenchmarkCreateOrUpdate
 
@@ -48,14 +49,35 @@ module BenchmarkCreateOrUpdate
     candidates
   end
 
-
-  def self.benchmark(keys, n_common, n_disjoint, n_new, if_exists = :ignore)
+  def self.bench(label, width)
+    TestRecord.transaction do
+      tms = Benchmark.measure(label) { yield }
+      print(tms.label.ljust(width) + tms.to_s)
+      raise ActiveRecord::Rollback
+    end
+  end
+    
+  def self.benchmark(keys = :key1, n_common = 2000, n_disjoint = 2000, n_new = 2000)
     begin
       self.up
       candidates = setup(n_common, n_disjoint, n_new)
-      Benchmark.bm(24) do |x|
-        x.report("ActiveRecord") { TestRecord.create_or_update(candidates, keys, :if_exists => if_exists, :db_adaptor => "ActiveRecord") }
-        x.report(ActiveRecord::Base.connection.adapter_name) { TestRecord.create_or_update(candidates, keys, :if_exists => if_exists) }
+      width = 20
+      print("".ljust(width) + Benchmark::Tms::CAPTION)
+      2.times do
+        bench(ActiveRecord::Base.connection.adapter_name + " :ignore", width) {
+          TestRecord.create_or_update(candidates, keys, :if_exists => :ignore)
+        }
+        bench("ActiveRecord :ignore", width) { 
+          TestRecord.create_or_update(candidates, keys, :if_exists => :ignore, :db_adaptor => "ActiveRecord") 
+        }
+      end
+      2.times do
+        bench(ActiveRecord::Base.connection.adapter_name + " :update", width) {
+          TestRecord.create_or_update(candidates, keys, :if_exists => :update)
+        }
+        bench("ActiveRecord :update", width) { 
+          TestRecord.create_or_update(candidates, keys, :if_exists => :update, :db_adaptor => "ActiveRecord") 
+        }
       end
     ensure
       self.down
